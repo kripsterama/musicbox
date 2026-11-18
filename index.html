@@ -65,8 +65,9 @@ const on={kick:true,drum:true,bass:true,arp:true,lead:true,pad:true,bell:true};
 const lit={};INST.forEach(k=>lit[k]=on[k]?1:0);
 let W,H,DPR,safe={x:0,y:0,w:0,h:0},wall=8,band=30,ORDER=[],cols=2,rows=4;
 function layout(){
-  DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;
-  const r=probe.getBoundingClientRect();safe={x:r.left,y:r.top,w:r.width||W,h:r.height||H};
+  const c=cv.getBoundingClientRect(),r=probe.getBoundingClientRect();
+  DPR=Math.min(devicePixelRatio||1,2);W=c.width||innerWidth;H=c.height||innerHeight;cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  safe={x:r.left,y:r.top,w:r.width||W,h:r.height||H};
   cols=safe.w/safe.h>1.15?4:2;rows=8/cols;
   wall=Math.max(8,Math.min(safe.w,safe.h)*.022);
   ORDER=cols===4?['clock','lead','arp','pad','kick','bass','drum','bell']:['clock','lead','arp','pad','bass','drum','kick','bell'];
@@ -74,7 +75,12 @@ function layout(){
   const cw=(safe.w-wall*(cols+1))/cols,ch=(safe.h-band-wall*rows)/rows;
   ORDER.forEach((id,i)=>{const R=ROOM[id];R.id=id;R.x=safe.x+wall+(i%cols)*(cw+wall);R.y=safe.y+band+Math.floor(i/cols)*(ch+wall);R.w=cw;R.h=ch;R.fy=ch-ch*.09});
 }
-addEventListener('resize',layout);layout();
+/* iOS can report old sizes during resize/rotation, so compare against what is actually on screen. */
+function fit(){
+  const c=cv.getBoundingClientRect(),r=probe.getBoundingClientRect();
+  if((c.width&&c.width!==W)||(c.height&&c.height!==H)||r.left!==safe.x||r.top!==safe.y||(r.width||W)!==safe.w||(r.height||H)!==safe.h||Math.min(devicePixelRatio||1,2)!==DPR)layout();
+}
+addEventListener('resize',fit);layout();
 
 /* ---------------- the tune ---------------- */
 const NOTES=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
@@ -259,7 +265,8 @@ function roomFG(R,L){
 function drawClock(R){
   const w=R.w,h=R.h,fy=R.fy,m=Math.min(w,h),cx=w*.42,cy=h*.38,r=m*.27;
   const st=((Math.floor(P)%16)+16)%16,bar=((Math.floor(P/16)%4)+4)%4,bp=((P/4)%1+1)%1,bt=Math.pow(1-bp,3);
-  gear(w*.86,h*.36,m*.085,10,P*TAU/32,'#c9973f','#4a3418');gear(w*.86-m*.125,h*.36+m*.085,m*.05,8,-P*TAU/19+.3,'#9aa3ad','#3c4148');
+  const g2x=Math.max(w*.86-m*.125,cx+r*1.16+m*.065),g2d=w*.86-g2x,g2y=h*.36+Math.sqrt(Math.max(0,m*m*.0225-g2d*g2d));
+  gear(w*.86,h*.36,m*.085,10,P*TAU/32,'#c9973f','#4a3418');gear(g2x,g2y,m*.05,8,-P*TAU/19+.3,'#9aa3ad','#3c4148');
   ctx.fillStyle='#3a2416';rr(cx-m*.13,cy+r*.7,m*.26,fy-cy-r*.7,m*.02);ctx.fill();
   ctx.fillStyle='#1d120b';rr(cx-m*.1,cy+r*.9,m*.2,fy-cy-r*.9-m*.03,m*.015);ctx.fill();
   const pl=(fy-cy-r)*.72;
@@ -446,7 +453,7 @@ function drawPad(R,L){
 }
 function drawBell(R,L){
   const w=R.w,h=R.h,fy=R.fy,m=Math.min(w,h),o=on.bell,be=LH(tune.P.bell),age=o&&be?be.age:9,g=Math.exp(-age*3),k=Math.exp(-age*12),nx=o?NH(tune.P.bell):9;
-  const KEYS=['BTC','ETH','SOL','HYPE'],gr=Math.min(m*.115,w*.12);
+  const KEYS=['BTC','ETH','SOL','HYPE'],gr=Math.max(m*.06,Math.min(m*.115,w*.12,(fy-m*.34-h*.2)/3.64));
   for(let i=0;i<4;i++){const gx=w*(.2+(i%2)*.27),gy=h*.2+Math.floor(i/2)*gr*2.5,v=clamp(mkt[KEYS[i]]/10,-1,1),src=[tune.P.kick,tune.P.bass,tune.P.hat,tune.P.bell][i],srcOn=[on.kick,on.bass,on.drum,on.bell][i],hit=o&&srcOn?LH(src):null,jump=hit?Math.exp(-hit.age*7)*.55*(i%2?-1:1):0,a=-Math.PI/2+clamp(v*1.15+jump,-1.25,1.25)+Math.sin(T*2.3+i*1.7)*.035;
     ctx.fillStyle='#8a6424';circ(gx,gy,gr*1.14);ctx.fill();ctx.fillStyle='#e2b25a';circ(gx,gy,gr*1.06);ctx.fill();ctx.fillStyle='#fff8e6';circ(gx,gy,gr*.92);ctx.fill();
     ctx.lineWidth=gr*.12;ctx.strokeStyle='#e06a5a';ctx.beginPath();ctx.arc(gx,gy,gr*.72,-Math.PI/2-1.15,-Math.PI/2);ctx.stroke();ctx.strokeStyle='#5ec98a';ctx.beginPath();ctx.arc(gx,gy,gr*.72,-Math.PI/2,-Math.PI/2+1.15);ctx.stroke();
@@ -482,7 +489,7 @@ function mouse(R){
 /* ---------------- frame ---------------- */
 let hover=null;
 function frame(){
-  requestAnimationFrame(frame);T=now();P=pos();
+  requestAnimationFrame(frame);fit();T=now();P=pos();
   ctx.setTransform(DPR,0,0,DPR,0,0);
   const wg=ctx.createLinearGradient(0,0,W,H);wg.addColorStop(0,'#2a1a14');wg.addColorStop(1,'#140c0a');ctx.fillStyle=wg;ctx.fillRect(0,0,W,H);
   for(const id of ORDER){const R=ROOM[id],k=R.inst;let L=1;if(k){lit[k]+=((on[k]?1:0)-lit[k])*.12;L=lit[k]}
@@ -522,7 +529,7 @@ function unlock(){
 cv.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){const R=roomAt(e.clientX,e.clientY);hover=R?R.id:null}});
 cv.addEventListener('pointerleave',()=>hover=null);
 cv.addEventListener('pointerdown',e=>{
-  unlock();
+  fit();unlock();
   if(!started){started=true;startEl.hidden=true;toast('TAP A ROOM TO SEND IT TO SLEEP OR WAKE IT · TAP THE CLOCK FOR A NEW TUNE',5200);return}
   const R=roomAt(e.clientX,e.clientY);if(!R)return;
   const lx=e.clientX-R.x,ly=e.clientY-R.y,m=Math.min(R.w,R.h);
